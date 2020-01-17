@@ -1,0 +1,168 @@
+---
+title: "lab2"
+author: "Lydia Bleifuss"
+date: "1/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(naniar)
+library(VIM)
+library(skimr)
+library(ggfortify)
+library(here)
+```
+
+## 1. Get some data
+
+```{r}
+ca_pb <- read_csv(here("data","ca_pollution_burden.csv"))
+
+ca_dem <- read_csv(here("data","ca_census_demographics_2010.csv"))
+```
+
+
+## 2. Some data cleaning & wrangling 
+
+```{r}
+ca_pb_nopct <- ca_pb %>% 
+  clean_names() %>% #makes everyting lower case and snake case 
+  select(-contains("perc")) %>% #use minus to exclude things rather then select or keep only those, use ! if you want "do not match"
+  select(-contains("pctl")) %>% 
+  select(-latitude, -longitude)
+```
+
+```{r}
+ca_dem_clean <- ca_dem %>% 
+  clean_names()
+```
+
+
+## 3. Pollution burden indicators only 
+
+```{r}
+ca_pb_subset <- ca_pb_nopct %>% 
+  select(ozone:solid_waste, asthma:housing_burden)
+```
+
+
+Now let's do PCA:
+Use teh 'prcomp()' function
+```{r, eval = FALSE}
+
+#ERROR, good example 
+pb_pca <- prcomp(ca_pb_subset, scale = TRUE) #error because we are missing data, needed to add eval = FALSE in the header so R doesn't try to run it when you knit 
+
+```
+
+Aside: exploring missingness!
+```{r}
+summary(ca_pb_subset) #you can use this to see where there are NA values
+
+gg_miss_var(ca_pb_subset) #shows which variables have the most missingness, in this case it is "linguistic isolation"
+
+matrixplot(ca_pb_subset) #higher values are darker and red indicates NAs 
+
+matrixplot(ca_pb_subset, sortby = "poverty") #can also sort by a speciic variable, in this case "poverty" is organized from high to low  
+
+
+```
+
+
+Remove (complete case deletion) any observation with ANY NA values: #using "ANY NA, it will remove any ROW that has a missing variable"
+
+```{r}
+ca_pb_nona <- ca_pb_subset %>%
+  drop_na()
+
+summary(ca_pb_nona) #now we see that there aren't any NAs and there are appropriately less observations. Too much of a sacrifice to remove all of these values? Other remova NA options
+
+skim(ca_pb_nona) #give a really cool summary that is better than summary funiton 
+
+##### THIS SKIMER THING IS FREAKING AMAZING!!!!!###########
+```
+
+
+Now, no NA values, cool set to do PCA (otherwise, consider imputation, etc.): 
+
+```{r}
+my_ca_pca <- prcomp(ca_pb_nona, scale = TRUE) #normalizing the scales accross units 
+
+my_ca_pca
+summary(my_ca_pca) #shows how much (proportion) of the variance is explained by each principle component (PC#)
+
+#biplot(my_ca_pca) #scary, moving on to autoplot
+
+#going to use auto plot which is why we installed fortify 
+
+my_biplot <- autoplot(my_ca_pca,
+                      colour = NA,
+                      loadings.label = TRUE,
+                      loadings.label.size = 3,
+                      loadings.label.colour = "black",
+                      loadings.label.repel = TRUE)+
+scale_y_continuous(limits = c(-0.05, 0.05))
+
+my_biplot
+
+#this is only representing about 33% of varience, not great but...
+
+#positively correlated: unemployment and poverty 
+#no correlation: ozone and diesel_pm
+#negatively correlation: drinking_water, groundwater_threats 
+
+#because autoplot works with ggplot, you can use ggplot techniques to start customizing, but, lets look at what variables could be correlated to explor that 
+```
+
+## 4. PCA for polluiton burden + demographics 
+
+Join together the ca_dem_clean with ca_pb_nopct and we will drop all of the NAs once we have joined them
+
+```{r}
+##you can always use full join to keep everything! Then you can decide what to drop. (MERGE is the SAME, it's just the base r version)
+
+ca_df <- ca_dem_clean %>% 
+  inner_join(ca_pb_nopct, by = c("census_tract_number" = "census_tract")) #use c because then you can add a comma and add more, the left of the = corresponds to the left dataframe
+
+#Now drop NAs by complete case deletion:
+
+ca_nona <- ca_df %>% 
+  drop_na()
+
+```
+
+Make a subset of ca_nona that only includes: 
+
+- white_percent
+- elderly_65_percent
+- pm2_5
+- pesticides
+- traffic
+- asthma
+- cardiovascular_disease
+- poverty 
+
+```{r}
+my_sub <- ca_nona %>% 
+  select(white_percent,white_percent, elderly_65_percent, pm2_5, pesticides, traffic, asthma, cardiovascular_disease, poverty)
+```
+
+PCA:
+```{r}
+my_dem_pca <- prcomp(my_sub, scale = TRUE)
+
+my_dem_biplot <- autoplot(my_dem_pca,
+                      colour = NA,
+                      loadings.label = TRUE,
+                      loadings.label.size = 3,
+                      loadings.label.colour = "black",
+                      loadings.label.repel = TRUE)+
+scale_y_continuous(limits = c(-0.05, 0.05))+
+  theme_minimal()
+
+my_dem_biplot
+```
+
